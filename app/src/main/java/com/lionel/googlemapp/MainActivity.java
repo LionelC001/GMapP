@@ -2,10 +2,14 @@ package com.lionel.googlemapp;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.databinding.DataBindingUtil;
 import android.graphics.Color;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
@@ -17,6 +21,7 @@ import android.widget.AdapterView;
 
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.LocationSource;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
@@ -32,21 +37,24 @@ import com.lionel.googlemapp.databinding.LayoutMapInfoWindowBinding;
 import java.util.ArrayList;
 import java.util.List;
 
-public class MainActivity extends AppCompatActivity implements OnMapReadyCallback {
+public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, LocationListener, LocationSource {
 
     private static final int REQUEST_PERMISSION_LOCATION_FINE = 1000;
 
     private GoogleMap mapView;
-    private ActivityMainBinding dataBinding;
     private Marker marker;
     private LayoutMapInfoWindowBinding layoutMapInfoWindowBinding;
+    private OnLocationChangedListener myLocationListener;
+    private LocationManager locationManager;
+    private boolean isPermissionChecked = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        dataBinding = DataBindingUtil.setContentView(this, R.layout.activity_main);
+        ActivityMainBinding dataBinding = DataBindingUtil.setContentView(this, R.layout.activity_main);
         dataBinding.setMapHandler(this);
         layoutMapInfoWindowBinding = DataBindingUtil.inflate(getLayoutInflater(), R.layout.layout_map_info_window, null, false);
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
         initMap();
     }
@@ -61,13 +69,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mapView = googleMap;
-
         checkPermission();
     }
 
     private void checkPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
+            isPermissionChecked = true;
             runMapFunctions();
         } else {
             if (!ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION)) {
@@ -91,19 +99,18 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_PERMISSION_LOCATION_FINE && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            isPermissionChecked = true;
             runMapFunctions();
         } else {
             checkPermission();
         }
     }
 
-    @SuppressLint("MissingPermission")
     private void runMapFunctions() {
         if (mapView != null) {
-            mapView.setMyLocationEnabled(true);
-
             initPolyPath();
             initInfoWindow();
+            initLocationFun();
         }
     }
 
@@ -150,6 +157,94 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     return null;
                 }
             });
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void initLocationFun() {
+        mapView.setMyLocationEnabled(true);
+        mapView.setLocationSource(this);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void enableLocationUpdate(boolean isEnabled) {
+        if (isEnabled && isPermissionChecked) {
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 5, this);
+            } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000, 5, this);
+            }
+
+            Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            LogUtil.print("GPS_PROVIDER location is null: " + (location == null));
+            if (location == null) {
+                location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                LogUtil.print("NETWORK_PROVIDER location is null: " + (location == null));
+            }
+
+            if (location != null) {
+                LogUtil.print("into locationChanged");
+                onLocationChanged(location);
+            }
+        } else {
+            locationManager.removeUpdates(this);
+        }
+    }
+
+    @Override
+    public void onLocationChanged(Location location) {
+        LogUtil.print("onLocationChanged");
+        if (myLocationListener != null) {
+            myLocationListener.onLocationChanged(location);
+            mapView.animateCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
+        }
+    }
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+        LogUtil.print("onStatusChanged");
+
+    }
+
+    @Override
+    public void onProviderEnabled(String provider) {
+        LogUtil.print("onProviderEnabled");
+        enableLocationUpdate(true);
+    }
+
+    @Override
+    public void onProviderDisabled(String provider) {
+        LogUtil.print("onProviderDisabled");
+        enableLocationUpdate(false);
+    }
+
+    @Override
+    public void activate(OnLocationChangedListener onLocationChangedListener) {
+        LogUtil.print("activate");
+        myLocationListener = onLocationChangedListener;
+        enableLocationUpdate(true);
+    }
+
+    @Override
+    public void deactivate() {
+        LogUtil.print("deactivate");
+        myLocationListener = null;
+        enableLocationUpdate(false);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (mapView != null) {
+            enableLocationUpdate(true);
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (mapView != null) {
+            enableLocationUpdate(false);
         }
     }
 

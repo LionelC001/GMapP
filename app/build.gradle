@@ -18,7 +18,6 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            manifestPlaceholders = [GOOGLE_MAP_KEY: "API_KEY"]
         }
     }
 

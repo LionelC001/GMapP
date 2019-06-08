@@ -4,7 +4,7 @@ import android.util.Log;
 
 public class LogUtil {
 
-    public static void Print(String msg) {
+    public static void print(String msg) {
         Log.d("<>", msg);
     }
 }
