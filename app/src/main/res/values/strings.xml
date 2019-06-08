@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">GoogleMapP</string>
+
+    <string-array name="spinner_items">
+        <item>101</item>
+        <item>陽明山</item>
+        <item>大魯閣</item>
+        <item>墾丁</item>
+    </string-array>
+</resources>
