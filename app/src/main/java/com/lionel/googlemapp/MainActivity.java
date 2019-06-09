@@ -2,11 +2,17 @@ package com.lionel.googlemapp;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.databinding.DataBindingUtil;
 import android.graphics.Color;
 import android.location.Location;
+import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AlertDialog;
@@ -91,7 +97,44 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mapView = googleMap;
+
+        checkNetWork();
+        checkGps();
         checkPermission();
+    }
+
+    private void checkNetWork() {
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo info = cm.getActiveNetworkInfo();
+        if (info == null) {
+            new AlertDialog.Builder(this)
+                    .setTitle("提示")
+                    .setMessage("請打開網路功能, 否則將無法正常執行此頁面")
+                    .setPositiveButton("前往設定頁面", (dialog, which) -> {
+                        Intent intent = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
+                        startActivity(intent);
+                    })
+                    .setNegativeButton("不用", null)
+                    .show();
+        }
+    }
+
+    private void checkGps() {
+        LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        boolean isGpsOpen = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+        boolean isNetWorkOpen = locationManager.isProviderEnabled((LocationManager.NETWORK_PROVIDER));
+
+        if (!isGpsOpen || !isNetWorkOpen) {
+            new AlertDialog.Builder(this)
+                    .setTitle("提示")
+                    .setMessage("請打開定位功能, 否則將無法正常執行此頁面")
+                    .setPositiveButton("前往設定頁面", (dialog, which) -> {
+                        Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+                        startActivity(intent);
+                    })
+                    .setNegativeButton("不用", null)
+                    .show();
+        }
     }
 
     private void checkPermission() {
@@ -133,7 +176,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @SuppressLint("MissingPermission")
     private void initLocationFun() {
-        if (mapView != null && locationRequest != null && locationCallback != null) {
+        if ( mapView != null && locationRequest != null && locationCallback != null) {
             mapView.setMyLocationEnabled(true);
             fusedLocationClient.requestLocationUpdates(locationRequest,
                     locationCallback,
@@ -245,7 +288,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         super.onResume();
         initLocationFun();
     }
-
 
     @Override
     protected void onPause() {
