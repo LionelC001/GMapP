@@ -2,26 +2,25 @@ package com.lionel.googlemapp;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.content.Context;
-import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.databinding.DataBindingUtil;
 import android.graphics.Color;
 import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.view.View;
 import android.widget.AdapterView;
 
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
-import com.google.android.gms.maps.LocationSource;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
@@ -37,16 +36,17 @@ import com.lionel.googlemapp.databinding.LayoutMapInfoWindowBinding;
 import java.util.ArrayList;
 import java.util.List;
 
-public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, LocationListener, LocationSource {
+public class MainActivity extends AppCompatActivity implements OnMapReadyCallback {
 
     private static final int REQUEST_PERMISSION_LOCATION_FINE = 1000;
 
     private GoogleMap mapView;
     private Marker marker;
     private LayoutMapInfoWindowBinding layoutMapInfoWindowBinding;
-    private OnLocationChangedListener myLocationListener;
-    private LocationManager locationManager;
     private boolean isPermissionChecked = false;
+    private FusedLocationProviderClient fusedLocationClient;
+    private LocationCallback locationCallback;
+    private LocationRequest locationRequest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,9 +54,31 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         ActivityMainBinding dataBinding = DataBindingUtil.setContentView(this, R.layout.activity_main);
         dataBinding.setMapHandler(this);
         layoutMapInfoWindowBinding = DataBindingUtil.inflate(getLayoutInflater(), R.layout.layout_map_info_window, null, false);
-        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
+
+        initLocationClient();
         initMap();
+    }
+
+    private void initLocationClient() {
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+
+        locationRequest = LocationRequest.create();
+        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+        locationRequest.setInterval(5 * 1000);
+
+        locationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+
+                for (Location location : locationResult.getLocations()) {
+                    if (location != null) {
+                        LogUtil.print("location: " + location.getLatitude() + ", " + location.getLongitude());
+                        mapView.animateCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
+                    }
+                }
+            }
+        };
     }
 
     private void initMap() {
@@ -73,7 +95,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void checkPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
             isPermissionChecked = true;
             runMapFunctions();
@@ -84,12 +106,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle("需要權限")
                         .setMessage("本頁面需要開啟定位權限, 否則將無法正常使用")
-                        .setPositiveButton("ok", new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_PERMISSION_LOCATION_FINE);
-                            }
-                        })
+                        .setPositiveButton("ok", (dialog, which) -> ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_PERMISSION_LOCATION_FINE))
                         .show();
             }
         }
@@ -107,10 +124,22 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void runMapFunctions() {
-        if (mapView != null) {
+        if (mapView != null && isPermissionChecked) {
+            initLocationFun();
             initPolyPath();
             initInfoWindow();
-            initLocationFun();
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void initLocationFun() {
+        if (mapView != null && locationRequest != null && locationCallback != null) {
+            mapView.setMyLocationEnabled(true);
+            fusedLocationClient.requestLocationUpdates(locationRequest,
+                    locationCallback,
+                    null);
+
+            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null);
         }
     }
 
@@ -157,94 +186,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     return null;
                 }
             });
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private void initLocationFun() {
-        mapView.setMyLocationEnabled(true);
-        mapView.setLocationSource(this);
-    }
-
-    @SuppressLint("MissingPermission")
-    private void enableLocationUpdate(boolean isEnabled) {
-        if (isEnabled && isPermissionChecked) {
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 5, this);
-            } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000, 5, this);
-            }
-
-            Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            LogUtil.print("GPS_PROVIDER location is null: " + (location == null));
-            if (location == null) {
-                location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-                LogUtil.print("NETWORK_PROVIDER location is null: " + (location == null));
-            }
-
-            if (location != null) {
-                LogUtil.print("into locationChanged");
-                onLocationChanged(location);
-            }
-        } else {
-            locationManager.removeUpdates(this);
-        }
-    }
-
-    @Override
-    public void onLocationChanged(Location location) {
-        LogUtil.print("onLocationChanged");
-        if (myLocationListener != null) {
-            myLocationListener.onLocationChanged(location);
-            mapView.animateCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
-        }
-    }
-
-    @Override
-    public void onStatusChanged(String provider, int status, Bundle extras) {
-        LogUtil.print("onStatusChanged");
-
-    }
-
-    @Override
-    public void onProviderEnabled(String provider) {
-        LogUtil.print("onProviderEnabled");
-        enableLocationUpdate(true);
-    }
-
-    @Override
-    public void onProviderDisabled(String provider) {
-        LogUtil.print("onProviderDisabled");
-        enableLocationUpdate(false);
-    }
-
-    @Override
-    public void activate(OnLocationChangedListener onLocationChangedListener) {
-        LogUtil.print("activate");
-        myLocationListener = onLocationChangedListener;
-        enableLocationUpdate(true);
-    }
-
-    @Override
-    public void deactivate() {
-        LogUtil.print("deactivate");
-        myLocationListener = null;
-        enableLocationUpdate(false);
-    }
-
-    @Override
-    protected void onStart() {
-        super.onStart();
-        if (mapView != null) {
-            enableLocationUpdate(true);
-        }
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        if (mapView != null) {
-            enableLocationUpdate(false);
         }
     }
 
@@ -296,6 +237,21 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             container.setTitle(pointName);
             container.setSrcDrawable(srcDrawable);
             marker.setTag(container);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        initLocationFun();
+    }
+
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (fusedLocationClient != null && locationCallback != null) {
+            fusedLocationClient.removeLocationUpdates(locationCallback);
         }
     }
 }
